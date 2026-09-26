@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spin the Globe — Trip Explorer</title>
+<script src="https://unpkg.com/globe.gl"></script>
+<style>
+  :root {
+    --surface-1:      #1a1a19;
+    --page-plane:     #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted:          #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --good:           #0ca30c;
+    --slot-home:      #3987e5;  /* categorical slot 1 - blue */
+    --slot-dest:      #d95926;  /* categorical slot 2 - orange */
+    --slot-active:    #199e70;  /* categorical slot 3 - aqua */
+    --slot-relax:     #d55181;  /* categorical slot 5 - magenta */
+    --seq-100: #cde2fb; --seq-150: #b7d3f6; --seq-200: #9ec5f4; --seq-250: #86b6ef;
+    --seq-300: #6da7ec; --seq-350: #5598e7; --seq-400: #3987e5; --seq-450: #2a78d6;
+    --seq-500: #256abf; --seq-550: #1c5cab; --seq-600: #184f95; --seq-650: #104281;
+    --seq-700: #0d366b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 1.75rem 1.5rem 1rem;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0 0 0.3rem; font-size: 1.9rem; }
+  header p { margin: 0; color: var(--text-secondary); font-size: 0.95rem; }
+
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .panel {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.1rem 1.3rem;
+  }
+
+  .controls-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .field-group { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .field-group label { font-size: 0.85rem; color: var(--text-secondary); }
+  input[type="text"] {
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #111110;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    min-width: 220px;
+  }
+  button {
+    padding: 0.5rem 0.9rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #2a2a28;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  button:hover { background: #333331; }
+  button.primary { background: var(--slot-dest); border-color: var(--slot-dest); }
+  button.primary:hover { opacity: 0.9; }
+  #home-status { font-size: 0.82rem; color: var(--muted); }
+
+  .segmented {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .segmented button {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 0.45rem 1rem;
+    font-size: 0.85rem;
+  }
+  .segmented button.active-seg { background: var(--slot-active); color: #fff; }
+  .segmented button.relax-seg.active-seg { background: var(--slot-relax); color: #fff; }
+
+  #globeViz { width: 100%; height: 520px; border-radius: 12px; overflow: hidden; }
+  .globe-hint { text-align: center; color: var(--muted); font-size: 0.82rem; margin-top: 0.5rem; }
+
+  .results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.25rem;
+  }
+  .card h3 { margin: 0 0 0.5rem; font-size: 1.05rem; }
+  .card .sub { color: var(--muted); font-size: 0.8rem; margin: -0.3rem 0 0.7rem; }
+  .stat-row { display: flex; justify-content: space-between; padding: 0.35rem 0; border-top: 1px solid var(--gridline); font-size: 0.9rem; }
+  .stat-row:first-of-type { border-top: none; }
+  .stat-row .k { color: var(--text-secondary); }
+  .stat-row .v { font-variant-numeric: tabular-nums; }
+
+  #chart-wrap { position: relative; }
+  .chart-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: #050505;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.78rem;
+    color: var(--text-primary);
+    display: none;
+    white-space: nowrap;
+    z-index: 5;
+  }
+  .best-line { font-size: 0.88rem; color: var(--text-secondary); margin-top: 0.6rem; }
+  .best-line b { color: var(--text-primary); }
+
+  .poi-list { display: flex; flex-direction: column; gap: 0.7rem; max-height: 420px; overflow-y: auto; }
+  .poi-item { display: flex; gap: 0.6rem; border-top: 1px solid var(--gridline); padding-top: 0.6rem; }
+  .poi-item:first-child { border-top: none; padding-top: 0; }
+  .poi-item img { width: 52px; height: 52px; object-fit: cover; border-radius: 6px; flex-shrink: 0; background: #2a2a28; }
+  .poi-title { margin: 0; font-size: 0.92rem; }
+  .poi-title a { color: var(--text-primary); text-decoration: none; }
+  .poi-title a:hover { text-decoration: underline; }
+  .poi-extract { margin: 0.15rem 0 0.3rem; font-size: 0.8rem; color: var(--text-secondary); }
+  .tag { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: var(--text-secondary); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.active { background: var(--slot-active); }
+  .dot.relax { background: var(--slot-relax); }
+
+  .status-msg { color: var(--muted); font-size: 0.85rem; }
+  .empty-hint { text-align: center; color: var(--muted); padding: 2.5rem 1rem; }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.75rem;
+    padding: 1.5rem 1rem 2.5rem;
+    line-height: 1.6;
+  }
+  footer a { color: var(--text-secondary); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Spin the Globe</h1>
+  <p>Click anywhere on the globe (or jump to a random destination) to get a flight estimate, the best time to visit, and things to do.</p>
+</header>
+
+<main>
+  <div class="panel controls-row">
+    <div class="field-group">
+      <label for="home-input">Home:</label>
+      <input type="text" id="home-input" placeholder="e.g. Houston, TX">
+      <button id="set-home-btn">Set home</button>
+      <span id="home-status">No home location set yet</span>
+    </div>
+    <div class="field-group">
+      <span class="segmented" id="vacation-toggle">
+        <button class="active-seg" data-mode="active">Active</button>
+        <button data-mode="relaxing">Relaxing</button>
+      </span>
+      <button class="primary" id="random-btn">🎲 Random destination</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div id="globeViz"></div>
+    <p class="globe-hint">Drag to rotate · scroll to zoom · click a point on land to select it</p>
+  </div>
+
+  <div id="results">
+    <div class="empty-hint">Nothing selected yet — click the globe above or hit "Random destination".</div>
+  </div>
+
+  <footer id="footer-sources"></footer>
+</main>
+
+<script>
+const RANDOM_DESTINATIONS = [
+  {name:"Kyoto, Japan", lat:35.0116, lng:135.7681},
+  {name:"Reykjavik, Iceland", lat:64.1466, lng:-21.9426},
+  {name:"Cape Town, South Africa", lat:-33.9249, lng:18.4241},
+  {name:"Queenstown, New Zealand", lat:-45.0312, lng:168.6626},
+  {name:"Banff, Canada", lat:51.1784, lng:-115.5708},
+  {name:"Marrakech, Morocco", lat:31.6295, lng:-7.9811},
+  {name:"Santorini, Greece", lat:36.3932, lng:25.4615},
+  {name:"Ubud, Bali, Indonesia", lat:-8.5069, lng:115.2625},
+  {name:"Machu Picchu, Peru", lat:-13.1631, lng:-72.5450},
+  {name:"Petra, Jordan", lat:30.3285, lng:35.4444},
+  {name:"Ha Long Bay, Vietnam", lat:20.9101, lng:107.1839},
+  {name:"Dubrovnik, Croatia", lat:42.6507, lng:18.0944},
+  {name:"Interlaken, Switzerland", lat:46.6863, lng:7.8632},
+  {name:"Lofoten Islands, Norway", lat:68.1490, lng:13.6094},
+  {name:"Salzburg, Austria", lat:47.8095, lng:13.0550},
+  {name:"Cairo, Egypt", lat:30.0444, lng:31.2357},
+  {name:"Rio de Janeiro, Brazil", lat:-22.9068, lng:-43.1729},
+  {name:"Bora Bora, French Polynesia", lat:-16.5004, lng:-151.7415},
+  {name:"Kruger National Park, South Africa", lat:-23.9884, lng:31.5547},
+  {name:"Chiang Mai, Thailand", lat:18.7883, lng:98.9853},
+  {name:"Edinburgh, Scotland", lat:55.9533, lng:-3.1883},
+  {name:"Vancouver, Canada", lat:49.2827, lng:-123.1207},
+  {name:"Sydney, Australia", lat:-33.8688, lng:151.2093},
+  {name:"Zanzibar, Tanzania", lat:-6.1659, lng:39.2026},
+  {name:"El Chaltén, Patagonia, Argentina", lat:-49.3325, lng:-72.8878},
+];
+
+const ACTIVE_KEYWORDS = ["hike","hiking","trail","trek","mountain","peak","ski","surf","kayak","climb","climbing",
+  "adventure","national park","forest","canyon","volcano","glacier","dive","diving","cave","rapids","cycling",
+  "bike","safari","waterfall","sport","stadium","marathon","zipline","rock formation","reserve","wildlife"];
+const RELAX_KEYWORDS = ["museum","gallery","cathedral","church","basilica","palace","castle","garden","spa",
+  "beach","resort","market","theatre","theater","opera","historic","monument","temple","shrine","plaza",
+  "square","aquarium","zoo","cafe","vineyard","winery","promenade","old town","ruins"];
+
+const state = {
+  home: JSON.parse(localStorage.getItem("globe-trip-home") || "null"),
+  vacationMode: localStorage.getItem("globe-trip-mode") || "active",
+  selected: null,
+  pois: [],
+  climateMonths: null,
+};
+
+const globeEl = document.getElementById("globeViz");
+const world = Globe()(globeEl)
+  .globeImageUrl("https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg")
+  .bumpImageUrl("https://unpkg.com/three-globe/example/img/earth-topology.png")
+  .backgroundColor("rgba(0,0,0,0)")
+  .width(globeEl.clientWidth)
+  .height(520)
+  .pointsData([])
+  .pointLat("lat")
+  .pointLng("lng")
+  .pointColor("color")
+  .pointAltitude(0.02)
+  .pointRadius(0.45)
+  .pointLabel("label")
+  .onGlobeClick(({ lat, lng }) => selectLocation(lat, lng));
+
+window.addEventListener("resize", () => world.width(globeEl.clientWidth));
+
+function updateMarkers() {
+  const pts = [];
+  if (state.home) pts.push({ lat: state.home.lat, lng: state.home.lng, color: "#3987e5", label: `Home: ${state.home.name}` });
+  if (state.selected) pts.push({ lat: state.selected.lat, lng: state.selected.lng, color: "#d95926", label: state.selected.name || "Selected" });
+  world.pointsData(pts);
+}
+
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function estimateFlightHours(distanceKm) {
+  const cruiseSpeedKmh = 900;
+  return distanceKm / cruiseSpeedKmh + 0.75;
+}
+function formatHours(h) {
+  const hrs = Math.floor(h);
+  const mins = Math.round((h - hrs) * 60);
+  return `${hrs}h ${mins}m`;
+}
+
+async function geocodeHome(query) {
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!data.results || data.results.length === 0) throw new Error("Location not found");
+  const r = data.results[0];
+  return {
+    name: [r.name, r.admin1, r.country].filter(Boolean).join(", "),
+    lat: r.latitude,
+    lng: r.longitude,
+  };
+}
+
+async function reverseGeocode(lat, lng) {
+  const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`;
+  const res = await fetch(url);
+  const data = await res.json();
+  const name = data.city || data.locality || data.principalSubdivision || data.countryName || null;
+  const country = data.countryName || "";
+  if (!name) {
+    return { name: `Open water near ${lat.toFixed(1)}, ${lng.toFixed(1)}`, country: "" };
+  }
+  return { name: country && name !== country ? `${name}, ${country}` : name, country };
+}
+
+async function fetchClimate(lat, lng) {
+  const start = "2021-01-01", end = "2024-12-31";
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${start}&end_date=${end}&daily=temperature_2m_mean,precipitation_sum&timezone=auto`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Climate data unavailable");
+  const data = await res.json();
+  const times = data.daily.time;
+  const temps = data.daily.temperature_2m_mean;
+  const precips = data.daily.precipitation_sum;
+
+  const monthAgg = Array.from({length: 12}, () => ({ tempSum: 0, tempN: 0, precipSum: 0, years: new Set() }));
+  times.forEach((dateStr, i) => {
+    const [y, m] = dateStr.split("-");
+    const idx = parseInt(m, 10) - 1;
+    if (temps[i] != null) { monthAgg[idx].tempSum += temps[i]; monthAgg[idx].tempN += 1; }
+    if (precips[i] != null) { monthAgg[idx].precipSum += precips[i]; }
+    monthAgg[idx].years.add(y);
+  });
+
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const months = monthAgg.map((agg, i) => {
+    const avgTemp = agg.tempN ? agg.tempSum / agg.tempN : null;
+    const avgMonthlyPrecip = agg.years.size ? agg.precipSum / agg.years.size : null;
+    return { month: monthNames[i], avgTemp, avgMonthlyPrecip };
+  });
+
+  const scored = months.map(m => ({
+    ...m,
+    score: m.avgTemp == null ? -Infinity : -Math.abs(m.avgTemp - 21) * 2 - (m.avgMonthlyPrecip || 0) / 30,
+  }));
+  const ranked = [...scored].sort((a, b) => b.score - a.score);
+  const bestMonths = ranked.slice(0, 3).map(m => m.month);
+
+  return { months: scored, bestMonths };
+}
+
+async function fetchPOIs(lat, lng) {
+  const url = `https://en.wikipedia.org/w/api.php?action=query&generator=geosearch&ggscoord=${lat}%7C${lng}&ggsradius=10000&ggslimit=20&prop=extracts%7Cpageimages&exintro=1&explaintext=1&exchars=200&piprop=thumbnail&pithumbsize=100&format=json&origin=*`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!data.query || !data.query.pages) return [];
+  const pages = Object.values(data.query.pages);
+  return pages.map(p => {
+    const text = `${p.title} ${p.extract || ""}`.toLowerCase();
+    let category = "general";
+    if (ACTIVE_KEYWORDS.some(k => text.includes(k))) category = "active";
+    else if (RELAX_KEYWORDS.some(k => text.includes(k))) category = "relax";
+    return {
+      title: p.title,
+      extract: p.extract || "",
+      thumb: p.thumbnail ? p.thumbnail.source : null,
+      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(p.title.replace(/ /g, "_"))}`,
+      category,
+      index: p.index,
+    };
+  }).sort((a, b) => a.index - b.index);
+}
+
+function drawChart(months, bestMonths) {
+  const wrap = document.getElementById("chart-wrap");
+  const temps = months.map(m => m.avgTemp).filter(t => t != null);
+  const tMin = Math.min(...temps), tMax = Math.max(...temps);
+  const steps = [
+    "var(--seq-100)","var(--seq-150)","var(--seq-200)","var(--seq-250)","var(--seq-300)","var(--seq-350)",
+    "var(--seq-400)","var(--seq-450)","var(--seq-500)","var(--seq-550)","var(--seq-600)","var(--seq-650)","var(--seq-700)"
+  ];
+  const w = 340, h = 150, padBottom = 22, barW = (w / 12) - 4;
+  let bars = "";
+  months.forEach((m, i) => {
+    const t = tMax > tMin ? (m.avgTemp - tMin) / (tMax - tMin) : 0.5;
+    const stepIdx = Math.round(t * (steps.length - 1));
+    const barH = Math.max(4, (h - padBottom) * (0.15 + 0.85 * t));
+    const x = i * (w / 12) + 2;
+    const y = (h - padBottom) - barH;
+    const isBest = bestMonths.includes(m.month);
+    bars += `<g class="bar-g" data-idx="${i}">
+      <rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="4" fill="${steps[stepIdx]}" ${isBest ? 'stroke="var(--good)" stroke-width="2"' : ''}></rect>
+      <text x="${x + barW/2}" y="${h - 6}" font-size="9" fill="var(--muted)" text-anchor="middle">${m.month}</text>
+      ${isBest ? `<text x="${x + barW/2}" y="${y - 4}" font-size="10" fill="var(--good)" text-anchor="middle">★</text>` : ''}
+    </g>`;
+  });
+  wrap.innerHTML = `
+    <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">
+      <line x1="0" y1="${h - padBottom}" x2="${w}" y2="${h - padBottom}" stroke="var(--baseline)" stroke-width="1"></line>
+      ${bars}
+    </svg>
+    <div class="chart-tooltip" id="chart-tooltip"></div>
+  `;
+  const tooltip = document.getElementById("chart-tooltip");
+  wrap.querySelectorAll(".bar-g").forEach(g => {
+    const idx = parseInt(g.dataset.idx, 10);
+    const m = months[idx];
+    g.addEventListener("mousemove", e => {
+      const rect = wrap.getBoundingClientRect();
+      tooltip.style.left = (e.clientX - rect.left + 10) + "px";
+      tooltip.style.top = (e.clientY - rect.top - 10) + "px";
+      tooltip.style.display = "block";
+      const tempText = m.avgTemp != null ? `${m.avgTemp.toFixed(1)}°C avg` : "no data";
+      const precipText = m.avgMonthlyPrecip != null ? `~${Math.round(m.avgMonthlyPrecip)}mm typical rainfall` : "";
+      tooltip.innerHTML = `<b>${m.month}</b><br>${tempText}<br>${precipText}`;
+    });
+    g.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+  });
+}
+
+function renderResults() {
+  const results = document.getElementById("results");
+  if (!state.selected) {
+    results.innerHTML = `<div class="empty-hint">Nothing selected yet — click the globe above or hit "Random destination".</div>`;
+    return;
+  }
+  const s = state.selected;
+  let flightHtml = "";
+  if (state.home) {
+    const dist = haversineKm(state.home.lat, state.home.lng, s.lat, s.lng);
+    const hrs = estimateFlightHours(dist);
+    flightHtml = `
+      <div class="stat-row"><span class="k">Distance from ${state.home.name}</span><span class="v">${Math.round(dist).toLocaleString()} km</span></div>
+      <div class="stat-row"><span class="k">Est. direct flight time</span><span class="v">${formatHours(hrs)}</span></div>
+    `;
+  } else {
+    flightHtml = `<p class="status-msg">Set your home location above to see flight distance and time.</p>`;
+  }
+
+  let climateHtml = `<p class="status-msg">Loading climate data…</p>`;
+  if (state.climateFailed) {
+    climateHtml = `<p class="status-msg">Climate data unavailable for this location.</p>`;
+  } else if (state.climateMonths) {
+    climateHtml = `<div id="chart-wrap"></div><p class="best-line">Best time to visit: <b>${state.climateMonths.bestMonths.join(", ")}</b> — based on 2021–2024 average daily temperature and typical rainfall.</p>`;
+  }
+
+  const filtered = state.pois.filter(p => state.vacationMode === "active" ? p.category !== "relax" : p.category !== "active");
+  let poiHtml = `<p class="status-msg">Loading nearby things to do…</p>`;
+  if (state.poisLoaded) {
+    poiHtml = filtered.length ? `<div class="poi-list">${filtered.map(p => `
+      <div class="poi-item">
+        ${p.thumb ? `<img src="${p.thumb}" alt="">` : `<div style="width:52px;height:52px;border-radius:6px;background:#2a2a28;flex-shrink:0;"></div>`}
+        <div>
+          <p class="poi-title"><a href="${p.url}" target="_blank" rel="noopener">${p.title}</a></p>
+          <p class="poi-extract">${p.extract}</p>
+          <span class="tag"><span class="dot ${p.category === 'active' ? 'active' : 'relax'}"></span>${p.category === 'active' ? 'Active' : p.category === 'relax' ? 'Relaxing' : 'Sightseeing'}</span>
+        </div>
+      </div>`).join("")}</div>` : `<p class="status-msg">No notable landmarks found nearby — try another spot, ideally on land.</p>`;
+  }
+
+  results.innerHTML = `
+    <div class="panel" style="margin-bottom:1.25rem;">
+      <h3 style="margin:0;">${s.name}</h3>
+      <p class="sub">${s.lat.toFixed(3)}, ${s.lng.toFixed(3)}</p>
+    </div>
+    <div class="results-grid">
+      <div class="panel card">
+        <h3>✈️ Getting there</h3>
+        ${flightHtml}
+      </div>
+      <div class="panel card">
+        <h3>🌤️ Best time to visit</h3>
+        ${climateHtml}
+      </div>
+      <div class="panel card" style="grid-column: 1 / -1;">
+        <h3>📍 Things to do (${state.vacationMode === "active" ? "Active" : "Relaxing"})</h3>
+        ${poiHtml}
+      </div>
+    </div>
+  `;
+  if (state.climateMonths) drawChart(state.climateMonths.months, state.climateMonths.bestMonths);
+  updateSourcesFooter();
+}
+
+function updateSourcesFooter() {
+  const now = new Date().toLocaleString();
+  document.getElementById("footer-sources").innerHTML = `
+    Place names: <a href="https://www.bigdatacloud.com/" target="_blank" rel="noopener">BigDataCloud reverse geocoding</a> ·
+    Climate (2021–2024 daily normals): <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo Historical Weather API</a> ·
+    Things to do: <a href="https://www.wikipedia.org/" target="_blank" rel="noopener">Wikipedia GeoSearch</a> ·
+    Flight time is a straight-line estimate at ~900 km/h cruise speed, not an actual routed flight.<br>
+    Retrieved live at ${now}.
+  `;
+}
+
+async function selectLocation(lat, lng, seedName) {
+  state.selected = { lat, lng, name: seedName || "Loading…" };
+  state.climateMonths = null;
+  state.climateFailed = false;
+  state.pois = [];
+  state.poisLoaded = false;
+  updateMarkers();
+  world.pointOfView({ lat, lng, altitude: 1.6 }, 1200);
+  renderResults();
+
+  reverseGeocode(lat, lng).then(geo => {
+    state.selected.name = geo.name;
+    updateMarkers();
+    renderResults();
+  }).catch(() => {});
+
+  fetchClimate(lat, lng).then(climate => {
+    state.climateMonths = climate;
+    renderResults();
+  }).catch(() => {
+    state.climateFailed = true;
+    renderResults();
+  });
+
+  fetchPOIs(lat, lng).then(pois => {
+    state.pois = pois;
+    state.poisLoaded = true;
+    renderResults();
+  }).catch(() => {
+    state.pois = [];
+    state.poisLoaded = true;
+    renderResults();
+  });
+}
+
+document.getElementById("set-home-btn").addEventListener("click", async () => {
+  const q = document.getElementById("home-input").value.trim();
+  if (!q) return;
+  document.getElementById("home-status").textContent = "Looking up…";
+  try {
+    const home = await geocodeHome(q);
+    state.home = home;
+    localStorage.setItem("globe-trip-home", JSON.stringify(home));
+    document.getElementById("home-status").textContent = `Home: ${home.name}`;
+    updateMarkers();
+    renderResults();
+  } catch (e) {
+    document.getElementById("home-status").textContent = "Couldn't find that place — try a bigger city name.";
+  }
+});
+
+document.getElementById("random-btn").addEventListener("click", () => {
+  const pick = RANDOM_DESTINATIONS[Math.floor(Math.random() * RANDOM_DESTINATIONS.length)];
+  selectLocation(pick.lat, pick.lng, pick.name);
+});
+
+document.querySelectorAll("#vacation-toggle button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    state.vacationMode = btn.dataset.mode;
+    localStorage.setItem("globe-trip-mode", state.vacationMode);
+    document.querySelectorAll("#vacation-toggle button").forEach(b => b.classList.remove("active-seg"));
+    btn.classList.add("active-seg");
+    renderResults();
+  });
+});
+
+if (state.home) {
+  document.getElementById("home-input").value = state.home.name;
+  document.getElementById("home-status").textContent = `Home: ${state.home.name}`;
+}
+document.querySelectorAll("#vacation-toggle button").forEach(b => {
+  if (b.dataset.mode === state.vacationMode) b.classList.add("active-seg");
+  else b.classList.remove("active-seg");
+});
+updateMarkers();
+updateSourcesFooter();
+</script>
+
+</body>
+</html>
